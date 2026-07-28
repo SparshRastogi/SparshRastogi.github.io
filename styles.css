@@ -1,0 +1,721 @@
+/* ============================================================================
+   Sparsh Rastogi — portfolio
+   Ported from the Claude Design source. Layout is fluid by default: the original
+   shipped 9 media-query blocks across 6 widths, all !important, undoing a fixed
+   desktop grid. Here flex-wrap + clamp() let it adapt continuously. Four media
+   queries survive, each for something with no fluid analogue: nav links become a
+   menu (1040px), focus areas become a real grid (760px), the work timeline stacks
+   (600px), the hero CTAs tighten and the nav sheds the résumé link (480px).
+
+   The trap this port kept falling into: a fluid rule here cannot beat the same
+   property set inline in index.html. Layout must be lifted onto the data-r hooks
+   or the stylesheet is simply ignored.
+   ========================================================================== */
+
+/* ---- theme -------------------------------------------------------------- */
+/* --accent and --accent-text are split by JOB, not by taste.
+   --accent      fills, borders, icon strokes, the hero wave — graphics, which
+                 WCAG holds to 3:1, and which must stay light enough that the
+                 dark ink on accent-filled buttons still reads.
+   --accent-text the same hue darkened until it clears 4.5:1 as body text.
+   In dark mode one value satisfies both (11.65:1), so they are identical there.
+   In light mode they cannot be: #0f9d63 is only 3.49:1 on white, and darkening
+   it far enough for text drops the button's ink contrast to 3.21:1. Two tokens
+   resolve what one token could not. */
+/* Tell the browser this page themes itself. Without it, Chrome and Samsung
+   Internet 'force dark' can rewrite authored colours — and the one element
+   most at risk is the primary button, which is deliberately DARK ink on a
+   LIGHT accent. Force-dark inverts exactly that pattern, turning the label
+   light on light and making it vanish. */
+:root { color-scheme: dark light; }
+[data-theme="light"] { color-scheme: light; }
+[data-theme="dark"] { color-scheme: dark; }
+
+:root,
+[data-theme="dark"] {
+  --bg: #0b0d10;
+  --panel: #10131a;
+  --ink: #e8ecf0;
+  --muted: #7d8794;
+  --line: rgba(232, 236, 240, .12);
+  --accent: #57e0a0;
+  --accent-text: #57e0a0;      /* 11.65:1 on bg — no separate value needed */
+  --accent-soft: rgba(87, 224, 160, .12);
+  --nav-bg: rgba(11, 13, 16, .72);
+}
+
+[data-theme="light"] {
+  --bg: #eef1f3;
+  --panel: #ffffff;
+  --ink: #0b0d10;
+  --muted: #566070;
+  --line: rgba(11, 13, 16, .12);
+  --accent: #0f9d63;           /* graphics + button fill; ink on it = 4.77:1 */
+  --accent-text: #0a7d4e;      /* 5.18:1 on panel, 4.56:1 on bg — AA for text */
+  --accent-soft: rgba(15, 157, 99, .1);
+  --nav-bg: rgba(238, 241, 243, .82);
+}
+
+/* ---- base --------------------------------------------------------------- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: none; }
+button { font: inherit; color: inherit; }
+::selection { background: rgba(87, 224, 160, .28); }
+h1, h2, h3, p { margin: 0; }
+img { max-width: 100%; }
+
+/* ---- body copy: tight rag, not justified -------------------------------
+   The complaint was the empty space at the end of each line. Full
+   justification fixed the edge but moved the unevenness inside the line as
+   rivers of white space, which is worse and fails WCAG 2.2 SC 1.4.8.
+
+   Hyphenation alone addresses the actual complaint. Words break at line ends,
+   so each line fills closer to the measure and the trailing gaps shrink —
+   while word spacing stays perfectly even. Left aligned, tight rag.
+
+   Justified, at the operator's request, tuned to spend as little as possible
+   on the two things justification costs: stretched word spaces and hyphens.
+   These trade against each other — every legal break point is one less line
+   that has to stretch — so the settings were measured, not guessed. Word-space
+   widths were read off renders as the background gaps between ink runs, and
+   line-final hyphens counted by their ink profile (a short stroke at x-height
+   with nothing above or below it), at both a 360px phone column and the ~700px
+   desktop column.
+
+   What the search found, worst-line word space at 400px:
+
+     ragged                          12px   (what this replaced)
+     justify, any threshold 9+       23px
+     justify, 8 4 3                  23px
+     justify, 8 4 3 + word-spacing   21px   <- chosen
+     justify, 6 3 3 + word-spacing   22px, and DOUBLE the hyphens
+
+   Three findings worth keeping. The hyphenation threshold barely moves the
+   peak: 12 6 5 and no-hyphens-at-all both give 23px, because the lines that
+   stretch worst have no breakable word on them. `text-wrap: pretty` and
+   `auto` are indistinguishable under justification — pretty optimises a rag
+   that no longer exists. The only lever that touched the peak was trimming
+   base word-spacing by .012em, which at 14px is under a fifth of a pixel and
+   invisible on its own; it wins by nudging a word back onto the previous line.
+
+   So 8 4 3 is the floor worth paying for, not 6 3 3: below it the extra
+   hyphens are not bought back in spacing.
+   ---------------------------------------------------------------------- */
+p {
+  hyphens: auto;
+  -webkit-hyphens: auto;
+  hyphenate-limit-chars: 10 5 4;
+  text-wrap: pretty;
+  /* a URL or long identifier breaks rather than pushing past the column */
+  overflow-wrap: break-word;
+}
+
+/* Justification is gated on the MEASURE, not the viewport, because the measure
+   is what it actually depends on. The same phone shows the About narrative in a
+   ~360px column and a project bullet in a ~300px one inside a card, and those
+   two want opposite answers: worst-line word space measured 21px in the first
+   and 88px in the second — a gap wider than several words, because a 300px line
+   holds only five or six of them to absorb the slack.
+
+   A viewport media query cannot tell those two apart. A container query can, so
+   every element that directly holds a paragraph becomes a query container and
+   the paragraph asks how much room it actually has. Verified as a no-op on
+   layout: full-page renders at 400px and 1280px are identical in height with
+   and without the containment.
+
+   340px is chosen to sit between the two measured columns — above the 300px
+   card, below the 360px About — so the narrative justifies on a phone while
+   bullets inside cards stay ragged. */
+:where(*:has(> p)) { container-type: inline-size; }
+
+@container (min-width: 340px) {
+  p {
+    text-align: justify;
+    hyphenate-limit-chars: 8 4 3;
+    word-spacing: -.012em;
+  }
+}
+
+/* Cookie / analytics notice. A bar, not a modal: it reports a fact and offers a
+   choice, and nothing on the page is withheld until it is answered, so blocking
+   the content would be a lie about its own importance. Answered once, then
+   never returns.
+
+   The ground is opaque. A translucent, blurred ground was tried first — it ties
+   the bar to the nav, which is the same kind of object — and measured 3.25:1
+   for the notice text where the bar sat over the hero photograph, against the
+   4.5:1 AA floor. Contrast that depends on which pixels happen to be behind it
+   is not contrast. The bar reads as a layer through its hairline and its
+   entrance instead, neither of which costs legibility.
+
+   Itself a query container, so the actions can respond to the width of the BAR
+   rather than of the viewport. That matters here: the bar is capped at 760px
+   and inset from both gutters, so its width and the window's diverge, and a
+   media query would be answering the wrong question. It also keeps the
+   breakpoint count at the four DESIGN.md accounts for. */
+[data-r="cookiebar"] {
+  position: fixed;
+  left: clamp(12px, 3vw, 24px);
+  right: clamp(12px, 3vw, 24px);
+  bottom: clamp(12px, 3vw, 24px);
+  z-index: 60;
+  container-type: inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  animation: cookie-rise .42s cubic-bezier(.2, .7, .2, 1) both;
+}
+@keyframes cookie-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+[data-r="cookiebar"][hidden] { display: none; }
+
+/* Set in the sans, not the mono. Mono at 11px is the Readout role — dates,
+   venues, counts — and this is prose: two sentences a visitor has to actually
+   read before deciding. Sans at 12.5px is the Caption role, which is what this
+   is. The measure is capped so the line length stays readable on a wide bar. */
+[data-r="cookietext"] {
+  flex: 1 1 min(100%, 220px);
+  max-width: 62ch;
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  text-align: left;
+  hyphens: none;
+  word-spacing: normal;
+}
+[data-r="cookietext"] a { color: var(--accent-text); border-bottom: 1px solid var(--line); }
+
+[data-r="cookieacts"] { display: flex; gap: 8px; flex: none; margin-left: auto; }
+[data-r="cookiebar"] button {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .04em;
+  /* 30px. WCAG 2.5.8 AA sets the target-size floor at 24px, so this keeps a
+     margin over it; 44px is the AAA figure and was never the requirement. */
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .2s ease, background .2s ease, color .2s ease;
+}
+[data-r="cookieghost"] { color: var(--muted); background: transparent; border: 1px solid var(--line); }
+[data-r="cookieghost"]:hover { color: var(--ink); border-color: var(--accent); }
+[data-r="cookieok"] { color: #06231a; background: var(--accent); border: 1px solid var(--accent); font-weight: 600; }
+[data-r="cookieok"]:hover { background: var(--accent-text); }
+[data-r="cookiebar"] button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Once the text has taken the whole bar, the actions have a row to themselves,
+   and huddling them at the right leaves half of it empty while making two
+   small targets out of a full width. Below the width at which that wrap
+   happens they divide the row instead. */
+@container (max-width: 440px) {
+  [data-r="cookieacts"] { flex: 1 1 100%; margin-left: 0; }
+  [data-r="cookiebar"] button { flex: 1 1 0; padding: 0 12px; }
+}
+
+/* The colophon note opts out of all of it. It is set in mono, where every glyph
+   is the same width, so a stretched word space is far more conspicuous than in
+   the sans body — and hyphenating a 10.5px footnote ("adver-tising") draws
+   attention to a line whose whole job is to be unobtrusive. A hook rather than
+   an inline `text-align`, so the stylesheet stays the only place layout lives. */
+[data-r="colophon-note"] { text-align: left; hyphens: none; word-spacing: normal; }
+
+/* Typography is the original design's, unchanged: headings inherit Space
+   Grotesk from body, and their per-element letter-spacing stays inline where
+   the source put it. A Newsreader-serif heading variant was built and reverted
+   at the operator's request — see the artifact linked in the project thread if
+   it gets revisited. */
+h1, h2, h3 { text-wrap: balance; }
+
+/* ---- nav ---------------------------------------------------------------- */
+/* Scrolled state is a class, not a pile of inline style writes. */
+#nav.is-scrolled {
+  background: var(--nav-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom-color: var(--line);
+}
+
+/* ---- fluid layout ------------------------------------------------------
+   Every rule below replaces a breakpoint. The pattern is always the same:
+   flex-wrap with a min flex-basis, so a row becomes a column exactly when
+   its own content runs out of room — not when the viewport crosses a number.
+   -------------------------------------------------------------------- */
+
+/* two equal columns (about, contact) */
+[data-r="split"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(28px, 4vw, 52px);
+  align-items: stretch;
+}
+[data-r="split"] > * { flex: 1 1 min(100%, 320px); min-width: 0; }
+
+/* sidebar + body (recognition) — keeps the 350px ratio while it fits */
+[data-r="split-side"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(28px, 4vw, 56px);
+  align-items: flex-start;
+}
+[data-r="split-side"] > *:first-child { flex: 0 1 350px; min-width: min(100%, 280px); }
+[data-r="split-side"] > *:last-child  { flex: 1 1 min(100%, 400px); min-width: 0; }
+
+/* project cards — media pane + copy pane */
+[data-r="proj"],
+[data-r="proj-rev"] { display: flex; flex-wrap: wrap; }
+[data-r="proj"] > *,
+[data-r="proj-rev"] > * { min-width: 0; }
+[data-r="proj"] > *:first-child     { flex: 1.05 1 min(100%, 340px); }
+[data-r="proj"] > *:last-child      { flex: 1 1 min(100%, 320px); }
+[data-r="proj-rev"] > *:first-child { flex: 1 1 min(100%, 320px); }
+[data-r="proj-rev"] > *:last-child  { flex: 1.05 1 min(100%, 340px); }
+/* Project media panes. The source's image slots for these two were never
+   filled, so the pane is currently just its corner badge — a 340px floor would
+   render as a void. The floor returns automatically the moment a figure is
+   dropped in, so this needs no follow-up edit. */
+[data-proj-media] { min-height: 52px; }
+[data-proj-media]:has(img) { min-height: 340px; }
+
+/* stacked panes need a floor, or a filled media side collapses to a sliver */
+[data-r="proj"] > *:first-child:has(img),
+[data-r="proj-rev"] > *:last-child:has(img) { min-height: 210px; }
+
+/* Publications — a hairline-separated list, not cards.
+
+   Eight bordered panels stacked vertically read as eight separate objects, and
+   at phone width the section ran 3,046px: mostly card chrome and the empty
+   right-hand column the venue/button block left behind. The list drops every
+   per-item border, radius, background and the two-column split, and the same
+   eight entries come in around 1,800px — the scannable shape an academic
+   reader already knows from an index.
+
+   The row is a column, so nothing has to share horizontal space with a long
+   workshop name. Only the badge and the link pair up, on a top line of their
+   own, which puts both in a fixed column down the list. */
+[data-r="pubrow"] {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+  transition: background .18s ease;
+  /* the whole row is the link, so it must opt out of the global accent anchor
+     colour — the title reads as body text, not as a link that happens to be a
+     heading, and the accent is spent on the venue and the CTA instead */
+  color: var(--ink);
+}
+[data-r="pubrow"]:first-child { border-top: none; }
+[data-r="pubrow"]:hover { background: rgba(232, 236, 240, .03); }
+
+[data-r="pubtop"] { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
+[data-r="pubbadge"] {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--accent-text); background: var(--accent-soft);
+  border: 1px solid var(--line); border-radius: 5px; padding: 3px 7px;
+  flex: none;
+}
+/* The link sits level with the badge rather than trailing at the row's foot,
+   where a bare arrow was easy to miss. An outline pill, not a filled one:
+   eight filled accent buttons down the page would read as a wall of green. */
+[data-r="pubcta"] {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-left: auto; flex: none;
+  font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+  color: var(--accent-text);
+  border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px;
+  transition: border-color .18s ease, background .18s ease;
+}
+[data-r="pubrow"]:hover [data-r="pubcta"] { border-color: var(--accent); background: var(--accent-soft); }
+
+/* Publication titles: the `title` role. Kept at 18px here — at desktop widths a
+   title runs one or two lines and deserves the weight. */
+[data-r="pubtitle"] { font-size: 18px; font-weight: 600; line-height: 1.35; letter-spacing: -.01em; }
+[data-r="pubauthors"] {
+  font-family: 'IBM Plex Mono', monospace; font-size: 12.5px;
+  line-height: 1.5; color: var(--muted);
+}
+[data-r="pubvenue"] {
+  font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+  line-height: 1.45; color: var(--accent-text); margin-top: 1px;
+}
+
+/* work timeline — the rail must never collapse, so the label column shrinks
+   fluidly instead of dropping to a second row.
+   The min-content floor is load-bearing: a plain clamp() sets an exact track
+   width, and the logo block (160px image + 44px padding) simply overflowed it
+   at mobile widths, painting on top of the description column. minmax() with a
+   min-content floor means the track can never be narrower than what it holds. */
+[data-r="workrow"] {
+  display: grid;
+  grid-template-columns: minmax(min-content, clamp(110px, 20vw, 250px)) minmax(0, 1fr);
+  column-gap: clamp(14px, 3vw, 46px);
+  row-gap: 0;
+  position: relative;
+}
+/* Timeline cell padding lives here, not inline — otherwise the stacked rule
+   below can only win with !important, which the No-Override Rule forbids.
+   The last row gets a smaller bottom gap: nothing follows it on the rail. */
+[data-tl-left] { padding: 2px 0 44px 30px; }
+[data-tl-left]:last-of-type { padding-bottom: 4px; }
+
+/* keep that min-content floor small: the logo scales down instead of pinning
+   the track open at its intrinsic 204px */
+[data-tl-left] span:has(> img) { max-width: 100%; padding: 0 clamp(8px, 3vw, 22px); margin-bottom: 18px; }
+[data-tl-left] img { max-width: 100%; height: auto; }
+
+/* ---- section eyebrows ---------------------------------------------------
+   FOCUS, RESEARCH & WORK EXPERIENCE, EDUCATION, LEADERSHIP, TOOLBOX,
+   ACADEMIC SERVICE, CONTACT. These do sub-heading work — they name a region of
+   the page — but the source set them at 10.5px in muted grey, which reads as
+   fine print rather than structure. Raised to the 12.5px step, weight 600, and
+   full ink so they carry. Tracking eases from .2em to .16em because wider
+   letterforms need less of it, and the accent dash grows to 24×2px so the
+   punctuation mark scales with the type.
+   -------------------------------------------------------------------- */
+[data-r="eyebrow"] {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: .16em;
+  color: var(--ink);
+}
+[data-r="eyebrow"] > span:first-child {
+  width: 24px;
+  height: 2px;
+  flex: none;
+}
+
+/* hero — text column and portrait.
+   The children's flex MUST live here, not inline. The source had
+   `flex: 1 1 0; min-width: 0` on the text and `flex: none;
+   width: clamp(260px, 30vw, 384px)` on the portrait: a basis-0 child shrinks
+   to nothing, so the row never overflows, so flex-wrap never fires — the two
+   columns just squeezed until the text wrapped one word per line. Giving the
+   text a real flex-basis is what makes the wrap happen. */
+[data-r="hero"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: clamp(28px, 5vw, 72px);
+}
+/* The basis values are tuned so the hero stacks just below 600px, which lets the
+   existing 600px query own the full-width portrait rule instead of earning a
+   fifth breakpoint. 300 + 235 + gap crosses the available width at ~623px, so
+   there is a ~23px window (600–623) where the hero is stacked and the portrait
+   is still 235px. No real device sits there.
+   Neither number changes the desktop rendering: the text grows past its basis
+   anyway, and 30vw exceeds 235px above 783px. */
+[data-r="hero"] > *:first-child { flex: 1 1 min(100%, 300px); min-width: 0; }
+[data-r="hero"] > *:last-child {
+  flex: 0 1 clamp(235px, 30vw, 384px);
+  max-width: 100%;
+  align-self: center;
+}
+
+/* Publications header: h2 + hairline rule + a group of six profile chips.
+   The row had no flex-wrap, so the chip group was squeezed to ~150px on a phone
+   and every chip landed on its own line, staircasing off the right edge. With a
+   real basis the group drops to its own full-width line and the chips pack.
+   justify-content is start rather than end: at desktop the hairline's flex:1
+   already pushes the group right, so this only takes effect once wrapped. */
+[data-r="sechead"] { flex-wrap: wrap; }
+[data-r="seclinks"] {
+  flex: 1 1 min(100%, 320px);
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+/* Reversed project card: its media pane is the last child, so a collapsed
+   badge-only strip ended up under the text while the other card's sat on top.
+   Move it up while empty; a filled pane keeps the design's intended order. */
+[data-r="proj-rev"] > [data-proj-media]:not(:has(img)) { order: -1; }
+
+/* hidden by default; the 1040px rule reveals it. Base state lives here rather
+   than inline, or the media query cannot reach it. */
+#nav-toggle { display: none; }
+
+/* focus areas — a wrapping row at desktop, a real grid on narrow screens (see
+   the 760px rule). Both states live in CSS so one can override the other. */
+[data-r="focusrow"] {
+  display: flex;
+  align-items: center;
+  gap: 12px 24px;
+  flex-wrap: wrap;
+}
+
+/* ---- chip rows ----------------------------------------------------------
+   Coursework and the five toolbox groups. Flex wrapping is greedy: it fits what
+   it can and ends the row, so a wide chip like "Natural Language Processing"
+   pushed itself to the next line and left "Machine Learning" sitting alone with
+   most of the row empty.
+
+   flex-grow was tried and rejected: it filled the rows by stretching whichever
+   chips were on them, so a lone chip ballooned to the full width. The fix is to
+   ORDER the chips so the rows pack, and leave every chip at its natural size.
+   Widths were measured in the browser and packed first-fit-decreasing, so the
+   leftover space is spread thinly across rows instead of pooling in one.
+   -------------------------------------------------------------------- */
+[data-r="chiprow"] > * { flex: 0 0 auto; }
+
+[data-r="sortbar"] { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+[data-r="logobar"] {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+[data-r="navlinks"] { display: flex; gap: 2px; }
+[data-r="edu-line"] { min-width: 0; }
+
+/* Affiliation logo tiles. Size lives here rather than inline so the phone rule
+   below can scale it; each cap is tuned per aspect ratio, and max-HEIGHT is what
+   binds — Meesho's artwork is square, so its 34px cap renders it 34px wide and
+   the 96px width cap never applies. */
+[data-r="logotile"] {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 46px; padding: 0 11px;
+}
+[data-r="logotile"] img { width: auto; object-fit: contain; display: block; }
+[data-logo="meesho"]    { max-height: 34px; max-width:  96px; }
+[data-logo="amazon"]    { max-height: 23px; max-width: 104px; }
+[data-logo="unsw"]      { max-height: 24px; max-width: 118px; }
+[data-logo="mediwhale"] { max-height: 30px; max-width: 112px; }
+[data-logo="thapar"]    { max-height: 36px; max-width:  92px; }
+[data-logo="mbzuai"]    { max-height: 24px; max-width: 116px; }
+
+/* Two breakpoints survive, both for the same reason: a thing that must
+   disappear or reorder has no fluid analogue. Everything else is continuous. */
+
+/* 1. Nav links either fit or they don't. Works only because the inline
+      `display: flex` was lifted above — an inline style would beat it. */
+@media (max-width: 1040px) {
+  /* The links become a panel behind a toggle rather than simply vanishing —
+     six section jumps are the page's only navigation and dropping them left
+     mobile visitors with nothing but scrolling. */
+  #nav-toggle { display: inline-flex; }
+  [data-r="navlinks"] { display: none; }
+  #nav[data-nav-open] [data-r="navlinks"] {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    position: absolute;
+    top: calc(100% + 8px);
+    right: clamp(20px, 4.5vw, 40px);
+    min-width: 190px;
+    padding: 8px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 22px 50px -30px rgba(0, 0, 0, .7);
+  }
+  #nav[data-nav-open] [data-r="navlinks"] a { padding: 10px 12px; }
+  #nav-toggle:hover { border-color: var(--accent); }
+
+  /* left-aligned, not centred: every other section label and block on the page
+     starts at the gutter, and a centred affiliation strip read as an oddity
+     rather than a choice. (The source centred it here; that was inherited, not
+     decided.) */
+  [data-r="logobar"] { justify-content: flex-start; flex: 1 1 100%; }
+
+  /* Content-sized tiles wrap three-per-row and stop ~73px short of the gutter —
+     a whole tile of dead space at the right, which reads as a missing seventh
+     logo rather than as margin. Equal columns fill the row and square the edge.
+
+     TWO columns, not three. Three fits in two rows and looks tidier in the
+     abstract, but a third of 344px caps a tile's artwork at ~89px, and UNSW and
+     MBZUAI were already drawn wider than that — the neatening would have shrunk
+     the two logos with the most words in them, which is backwards. Halves give
+     every mark ~147px and a 78px tile, so the university names are legible
+     rather than decorative. That costs one extra row; a logo nobody can read is
+     the more expensive outcome. */
+  [data-r="logobar"] {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 9px;
+  }
+  [data-r="logotile"] { width: 100%; height: 78px; padding: 0 12px; }
+  /* caps stay proportional to the desktop set, scaled ~1.7x */
+  [data-logo="meesho"]    { max-height: 58px; max-width: 100%; }
+  [data-logo="amazon"]    { max-height: 39px; max-width: 100%; }
+  [data-logo="unsw"]      { max-height: 40px; max-width: 100%; }
+  [data-logo="mediwhale"] { max-height: 50px; max-width: 100%; }
+  [data-logo="thapar"]    { max-height: 60px; max-width: 100%; }
+  [data-logo="mbzuai"]    { max-height: 40px; max-width: 100%; }
+}
+
+/* Hero CTAs. Padding lives here, not inline, so the narrow-screen rule below
+   needs no !important — the No-Override Rule applies to my own additions too. */
+[data-r="ctarow"] { display: flex; flex-wrap: wrap; gap: 12px; }
+[data-r="ctarow"] > a { padding: 13px 22px; }
+[data-r="ctarow"] > a:last-child { padding: 13px 20px; }
+
+/* Both CTAs share one line on a phone. At the desktop padding the pair needs
+   ~364px and a 393px viewport only offers ~353px, so they wrapped. Trimming the
+   horizontal padding buys the 24px needed. Below ~360px they will wrap again,
+   which is the honest outcome — the alternative is shrinking the type. */
+@media (max-width: 480px) {
+  [data-r="ctarow"] { gap: 10px; }
+  [data-r="ctarow"] > a { padding-left: 16px; padding-right: 16px; }
+  /* The nav holds logo + menu toggle + résumé + theme. Adding the toggle pushed
+     that past a phone's width and clipped the theme control. The résumé link is
+     the one item duplicated elsewhere (the contact section has it as a full
+     button), so it yields. The source did the same thing at 560px. */
+  [data-r="navcv"] { display: none; }
+}
+
+/* Focus areas align in real columns instead of packing by width, which left the
+   second column ragged (AI for Healthcare not lining up under Multi-agent
+   Systems). A last chip left alone on its row spans the full width so a long
+   label like Time-Series Language Models never wraps inside a half-width cell. */
+@media (max-width: 760px) {
+  [data-r="focusrow"] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 14px;
+    align-items: start;
+  }
+  /* the FOCUS label takes its own row; the chips form the columns beneath it */
+  [data-r="focusrow"] > *:first-child { grid-column: 1 / -1; }
+  /* a lone chip on the final row spans, so a long label never wraps in a
+     half-width cell */
+  [data-r="focusrow"] > *:last-child:nth-child(even) { grid-column: 1 / -1; }
+}
+
+/* The FOCUS label is a plain sibling of the six focus chips in one wrapping
+   row, so on a narrow screen it sat inline with the first chip and the rest
+   ragged around it. Giving the label its own full-width line makes the chips
+   read as a block that starts below it, and lets them pack. */
+
+/* 2. The work timeline stacks. Content-driven, not arbitrary: the label column
+      has a ~180px min-content floor (role title, city) and the description
+      needs ~240px for bullets to read as prose rather than a word ladder.
+      Below ~600px of viewport those cannot both hold, so the two-column
+      relationship stops being worth preserving and the rows stack instead.
+      The rail stays continuous because the description cell picks up the same
+      left border and indent, so the fill span still overlays an unbroken line. */
+@media (max-width: 600px) {
+  /* Portrait is alone on its row here, so it takes the whole row. At its 235px
+     basis it left a third of the width empty beside it. */
+  [data-r="hero"] > *:last-child { flex-basis: 100%; }
+
+  /* Academic titles are long, so at phone width 18px runs to five or six lines
+     and the row becomes mostly title. 16px is still comfortably the dominant
+     element — authors are 12.5px mono — and it removes a line from most of them.
+     Mobile only: this is compaction, not a change to the type scale.
+     Everything else the old cards needed here — the padding squeeze, the
+     venue/button row rebuild — died with the cards: a single-column row has
+     nothing to reflow. */
+  [data-r="pubtitle"] { font-size: 16px; }
+
+  [data-r="workrow"] { grid-template-columns: minmax(0, 1fr); }
+  [data-tl-left]:not(:last-of-type) { padding-bottom: 14px; }
+
+  /* Stacked, the logo sat on its own line with the role block beneath it,
+     leaving most of the row empty beside the logo. Pair them instead: logo in
+     column one spanning the three text rows, role/date/location in column two.
+
+     Selected by WHAT the elements are, not where they sit. An earlier version
+     used :nth-child(2) for the logo and :nth-child(n+3) for the text — which
+     broke on the one entry that carries an extra absolutely-positioned wrapper,
+     shifting the logo into the text column where it stretched across the whole
+     card. Positional selectors assume every instance has identical structure;
+     these do not. The rail node and that wrapper are both position:absolute, so
+     they are out of flow and never become grid items. */
+  [data-tl-left] {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 16px;
+    align-content: start;
+  }
+  [data-tl-left] > span:has(> img) {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    align-self: start;
+    justify-self: start;
+    margin-bottom: 0;
+    /* The logo yields so the text column can hold its longest line on one row.
+       96px leaves ~210px for text against a widest line of 160px ("Applied
+       Scientist Intern"). A fixed cap, NOT a percentage: a percentage max-width
+       on a grid item inside an `auto`-sized track is circular — the track sizes
+       to the content, the content sizes to the track — and Chrome resolved it to
+       almost nothing, collapsing the tiles to slivers. The image scales with the
+       tile because its inline max-width was lifted; each logo keeps its own
+       max-height, which is deliberate per-aspect tuning from the source. */
+    max-width: 96px;
+    height: 56px;
+  }
+  /* nowrap makes a second line impossible rather than merely unlikely, so a
+     longer job title later cannot quietly reintroduce the wrapping. If one truly
+     cannot fit it will visibly overflow — a loud failure that gets fixed, not a
+     silent one that ships. */
+  [data-tl-left] > div { grid-column: 2; align-self: center; white-space: nowrap; }
+  [data-tl-right] {
+    border-left: 2px solid var(--line);
+    padding-left: 30px;
+    padding-bottom: 40px;
+  }
+}
+/* NOTE: the source also styled [data-r="logowrap"] here. No element in the
+   markup carries that hook — it was dead CSS in the original. Dropped. */
+
+/* ---- hover states ------------------------------------------------------
+   The source carried 50 style-hover="…" attributes — a Claude Design
+   authoring convention that does nothing in a browser. Deduped to 8 classes.
+   -------------------------------------------------------------------- */
+.hv-1:hover { color: var(--ink); }
+.hv-2:hover { border-color: var(--accent); }
+.hv-3:hover { border-color: var(--accent); box-shadow: 0 22px 50px -30px rgba(0, 0, 0, .7); }
+.hv-4:hover { border-color: var(--accent); background: var(--accent-soft); }
+.hv-5:hover { border-color: var(--accent); color: var(--ink); }
+.hv-6:hover { border-color: var(--accent); transform: translateY(-3px); box-shadow: 0 20px 46px -30px rgba(0, 0, 0, .7); }
+.hv-7:hover { border-color: var(--accent); transform: translateY(-2px); }
+.hv-8:hover { color: var(--accent); }
+
+/* ---- keyframes (verbatim from source) ----------------------------------- */
+@keyframes blink     { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
+@keyframes marquee   { 0% { transform: translateX(0) } 100% { transform: translateX(-50%) } }
+@keyframes vscroll   { 0% { transform: translateY(0) } 100% { transform: translateY(-50%) } }
+@keyframes pulseDot  { 0%, 100% { opacity: 1; box-shadow: 0 0 10px var(--accent) } 50% { opacity: .5; box-shadow: 0 0 3px var(--accent) } }
+@keyframes bob       { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(7px) } }
+@keyframes pulseRing { 0%, 100% { box-shadow: 0 0 0 6px var(--panel), 0 0 0 7px rgba(87, 224, 160, .35) } 50% { box-shadow: 0 0 0 6px var(--panel), 0 0 0 13px rgba(87, 224, 160, 0) } }
+@keyframes fadeUp    { 0% { opacity: 0; transform: translateY(24px) } 100% { opacity: 1; transform: translateY(0) } }
+
+/* ---- accessibility ------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+
+/* radius matches the documented `badge` step (5px) rather than a one-off 4px */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 5px; }

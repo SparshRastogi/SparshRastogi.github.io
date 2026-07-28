@@ -1,0 +1,6 @@
+# Sparsh Rastogi — portfolio
+# Single-page site; everything here is meant to be indexed.
+User-agent: *
+Allow: /
+
+Sitemap: https://sparshrastogi.github.io/sitemap.xml
